@@ -1,12 +1,6 @@
 import { put } from '@vercel/blob';
 
-// Force Node runtime for this function (belt-and-suspenders with vercel.json)
-export const config = {
-  runtime: '@vercel/node@3.0.0'
-};
-
 export default async function handler(req, res) {
-  // CORS preflight
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
