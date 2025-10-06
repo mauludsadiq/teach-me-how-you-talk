@@ -1,44 +1,45 @@
-// /api/submit.js — Vercel Edge Function: save to Blob Storage
 import { put } from '@vercel/blob';
 
-export const config = { runtime: 'edge' };
-
-export default async function handler(req) {
+export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
-      }
-    });
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.status(204).end();
   }
 
   if (req.method !== 'POST') {
-    return new Response('Method Not Allowed', { status: 405 });
+    return res.status(405).send('Method Not Allowed');
   }
 
   try {
-    const body = await req.json();
+    const body = await readJson(req);
     if (!Array.isArray(body.entries)) {
-      return new Response('Bad Request', { status: 400 });
+      return res.status(400).send('Bad Request');
     }
 
     const filename = `tmhyt/${Date.now()}.json`;
-    await put(filename, JSON.stringify({
-      entries: body.entries,
-      ts: body.ts || Date.now()
-    }, null, 2), { access: 'private' });
+    await put(
+      filename,
+      JSON.stringify({ entries: body.entries, ts: body.ts || Date.now() }, null, 2),
+      { access: 'private' }
+    );
 
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
-      }
-    });
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(200).json({ ok: true });
   } catch (e) {
-    return new Response('Server Error', { status: 500 });
+    return res.status(500).send('Server Error');
   }
+}
+
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', chunk => (data += chunk));
+    req.on('end', () => {
+      try { resolve(JSON.parse(data || '{}')); }
+      catch (e) { reject(e); }
+    });
+    req.on('error', reject);
+  });
 }
