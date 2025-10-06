@@ -1,24 +1,30 @@
-import { put } from "@vercel/blob";
-
-export const config = {
-  runtime: "nodejs18.x",
-  maxDuration: 10,
-};
+import { put } from '@vercel/blob';
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
+  if (req.method !== 'POST') {
+    return res.status(405).json({ ok: false, error: 'Method not allowed' });
+  }
 
   try {
-    const body = await req.json();
-    const fileName = `entries/${Date.now()}-${body.term?.replace(/\s+/g, "_") || "entry"}.json`;
+    const { text, consent } = req.body;
 
-    const { url } = await put(fileName, JSON.stringify(body, null, 2), {
-      access: "private",
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ ok: false, error: 'Missing or invalid text' });
+    }
+
+    if (consent !== true) {
+      return res.status(400).json({ ok: false, error: 'Consent required' });
+    }
+
+    const entry = { text, consent, timestamp: new Date().toISOString() };
+    const blob = await put(`entries/${Date.now()}.json`, JSON.stringify(entry), {
+      access: 'public',
+      addRandomSuffix: true
     });
 
-    return res.status(200).json({ ok: true, url });
+    res.status(200).json({ ok: true, url: blob.url });
   } catch (err) {
-    console.error(err);
+    console.error('Blob upload error:', err);
     res.status(500).json({ ok: false, error: err.message });
   }
 }
