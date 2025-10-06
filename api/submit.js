@@ -1,45 +1,24 @@
-import { put } from '@vercel/blob';
+import { put } from "@vercel/blob";
+
+export const config = {
+  runtime: "nodejs18.x",
+  maxDuration: 10,
+};
 
 export default async function handler(req, res) {
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    return res.status(204).end();
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).send('Method Not Allowed');
-  }
+  if (req.method !== "POST") return res.status(405).end();
 
   try {
-    const body = await readJson(req);
-    if (!Array.isArray(body.entries)) {
-      return res.status(400).send('Bad Request');
-    }
+    const body = await req.json();
+    const fileName = `entries/${Date.now()}-${body.term?.replace(/\s+/g, "_") || "entry"}.json`;
 
-    const filename = `tmhyt/${Date.now()}.json`;
-    await put(
-      filename,
-      JSON.stringify({ entries: body.entries, ts: body.ts || Date.now() }, null, 2),
-      { access: 'private' }
-    );
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    return res.status(200).json({ ok: true });
-  } catch (e) {
-    return res.status(500).send('Server Error');
-  }
-}
-
-function readJson(req) {
-  return new Promise((resolve, reject) => {
-    let data = '';
-    req.on('data', chunk => (data += chunk));
-    req.on('end', () => {
-      try { resolve(JSON.parse(data || '{}')); }
-      catch (e) { reject(e); }
+    const { url } = await put(fileName, JSON.stringify(body, null, 2), {
+      access: "private",
     });
-    req.on('error', reject);
-  });
+
+    return res.status(200).json({ ok: true, url });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 }
