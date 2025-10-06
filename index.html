@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Teach Me How You Talk</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{ --ink:#111; --muted:#666; --line:#e8e8e8; --bg:#fff; --accent:#111; --chip:#f7f7f7; }
+*{ box-sizing:border-box }
+body{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color:var(--ink); background:var(--bg); margin:1.25rem; }
+.container{ max-width: 820px; margin:auto; }
+h1{ font-size:1.5rem; margin:.25rem 0 .35rem; }
+p.tag{ margin:.1rem 0 1rem; color:#333; font-weight:600; }
+.card{ border:1px solid var(--line); border-radius:12px; padding:1rem; background:#fff; }
+label{ font-weight:600; }
+input, textarea{ width:100%; padding:.6rem .7rem; border:1px solid #ddd; border-radius:10px; background:#fff; }
+button{ padding:.6rem .9rem; border-radius:10px; border:1px solid #ddd; background:#fff; cursor:pointer; }
+button.primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
+.row{ display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
+.grid{ display:grid; grid-template-columns: 1fr 1fr; gap:.6rem; }
+.list .item{ border:1px solid var(--line); border-radius:10px; padding:.55rem .7rem; background:var(--chip); display:flex; justify-content:space-between; align-items:center; margin:.35rem 0; }
+small.muted{ color:var(--muted); }
+pre.copy{ white-space:pre-wrap; border:1px solid var(--line); background:#fafafa; padding:.7rem; border-radius:10px; }
+footer{ margin-top:1rem; color:var(--muted); font-size:.9rem; }
+.hidden{ display:none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Teach Me How You Talk</h1>
+  <p class="tag">Show us how you speak — we’ll show you how to explain it to an English teacher.</p>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label>Type your word or phrase</label>
+        <input id="form" placeholder="e.g., hella">
+      </div>
+      <div>
+        <label>What does it mean?</label>
+        <input id="meaning" placeholder="e.g., very; a lot of">
+      </div>
+    </div>
+    <div class="row" style="margin-top:.6rem;">
+      <button class="primary" onclick="addEntry()">Add</button>
+      <button onclick="clearFields()">Clear</button>
+      <small class="muted">No accounts. No uploads unless you consent below.</small>
+    </div>
+
+    <div class="list" id="list" style="margin-top:.8rem;"></div>
+
+    <div class="row" style="margin-top:.6rem;">
+      <button onclick="exportJSON()">Export JSON</button>
+      <button onclick="copyDataset()">Copy Dataset</button>
+      <button onclick="copyShareLink()">Copy Shareable Link</button>
+      <small class="muted">Data stays local unless you export or share.</small>
+    </div>
+
+    <hr style="border:none;border-top:1px solid var(--line);margin:1rem 0;">
+    <div class="row" style="justify-content:space-between;align-items:center;">
+      <b>Do You Want To Teach The Teacher?</b>
+      <button class="primary" onclick="teachTeacher()">Yes</button>
+    </div>
+
+    <div id="teacherPanel" class="hidden" style="margin-top:.8rem;">
+      <div id="explanations"></div>
+      <div class="row" style="margin-top:.6rem;">
+        <button onclick="copyAll()">Copy All Explanations</button>
+        <small class="muted">You can paste this into an email, assignment, or form.</small>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:.8rem;">
+      <input type="checkbox" id="consent" />
+      <label for="consent">I consent to send this dataset privately to the project’s storage when I click “Yes”.</label>
+    </div>
+  </div>
+
+  <footer>Respect first. You own your words. Explanations are descriptive, not prescriptive.</footer>
+</div>
+
+<script>
+let entries = [];
+
+// ---- Persistence ----
+const LS_KEY = "tmhyt_entries_v1";
+function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(entries)); }catch(e){} }
+function loadLocal(){ try{ const s = localStorage.getItem(LS_KEY); if(s){ entries = JSON.parse(s)||[]; renderList(); } }catch(e){} }
+
+function addEntry(){
+  const form = document.getElementById('form').value.trim();
+  const meaning = document.getElementById('meaning').value.trim();
+  if(!form){ alert("Please type a word or phrase."); return; }
+  if(!meaning){ alert("Please type what it means."); return; }
+  entries.push({form, meaning});
+  renderList();
+  clearFields();
+  saveLocal();
+}
+
+function clearFields(){ document.getElementById('form').value = ""; document.getElementById('meaning').value = ""; }
+
+function renderList(){
+  const list = document.getElementById('list');
+  list.innerHTML = "";
+  entries.forEach((e, i) => {
+    const div = document.createElement('div');
+    div.className = "item";
+    div.innerHTML = `<span><b>${escapeHTML(e.form)}</b> — ${escapeHTML(e.meaning)}</span>
+                     <button onclick="del(${i})">Delete</button>`;
+    list.appendChild(div);
+  });
+}
+
+function del(i){ entries.splice(i,1); renderList(); saveLocal(); }
+
+function teachTeacher(){
+  if(!entries.length){ alert("Add at least one word/meaning first."); return; }
+  const panel = document.getElementById('teacherPanel');
+  panel.classList.remove('hidden');
+  const exDiv = document.getElementById('explanations');
+  exDiv.innerHTML = "";
+  const chunks = entries.map(e => makeTeacherExplanation(e));
+  chunks.forEach(ch => {
+    const pre = document.createElement('pre'); pre.className = "copy"; pre.textContent = ch; exDiv.appendChild(pre);
+  });
+  window.__tmhyt_all = chunks.join("\n\n");
+  window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'});
+  // OPTIONAL: send to server if consented
+  sendToServer(entries);
+}
+
+// --- Behind-the-scenes analysis (simple, respectful, offline) ---
+function guessPOS(form){
+  const f = form.trim().toLowerCase();
+  if(f.split(" ").length>1){ return "Phrase"; }
+  if(f.endsWith("ly")) return "Adverb";
+  if(f.endsWith("ing")) return "Verb (gerund)";
+  return "Word (varies by use)";
+}
+function guessRegister(form){
+  const f = form.toLowerCase();
+  const informalHints = ["hella","lowkey","highkey","bruh","lit","dope","fam","sus"];
+  return informalHints.includes(f) ? "Informal (youth/community)" : "Neutral / depends on context";
+}
+function guessSyntaxFrame(form){
+  const pos = guessPOS(form);
+  if(pos.startsWith("Phrase")) return "[PHRASE] used as greeting/stance/idiom (depends on sentence)";
+  if(pos.startsWith("Adverb")) return "[ADV] + ADJ | [ADV] + VERB (modifies intensity or manner)";
+  return "[WORD] can act as ADJ/NOUN/VERB depending on usage; show an example sentence.";
+}
+function simpleMorphology(form){
+  const lowers = form.toLowerCase();
+  const prefixes = ["un","re","mis","dis","anti","pro","hyper","micro","tele"];
+  const suffixes = ["ness","ment","able","less","ful","ish","ify","tion","s"];
+  let comps = [];
+  prefixes.forEach(p=>{ if(lowers.startsWith(p) && lowers.length>p.length+2) comps.push(p+"-"); });
+  suffixes.forEach(s=>{ if(lowers.endsWith(s) && lowers.length>s.length+2) comps.push("-"+s); });
+  return comps.length ? ("Possible parts: " + comps.join(" ")) : "Not built from common schoolbook prefixes/suffixes (may be a community term or idiom).";
+}
+function makeTeacherExplanation(e){
+  const pos = guessPOS(e.form);
+  const reg = guessRegister(e.form);
+  const frame = guessSyntaxFrame(e.form);
+  const morph = simpleMorphology(e.form);
+  const template = [
+    `Term: "${e.form}"`,
+    `Meaning (what I mean): ${e.meaning}`,
+    `Part of speech (approx.): ${pos}`,
+    `Register (where it fits): ${reg}`,
+    `How it behaves in a sentence (syntax frame): ${frame}`,
+    `Morphology (word parts, if any): ${morph}`,
+    `Example in my voice: [Write a sentence with "${e.form}" here]`,
+    `Standard-English paraphrase: [Rewrite your sentence in school English, same meaning]`,
+    `Notes: This is descriptive, not prescriptive — it explains how I use the term.`
+  ];
+  return template.join("\n");
+}
+
+function copyAll(){
+  if(!window.__tmhyt_all){ return; }
+  navigator.clipboard.writeText(window.__tmhyt_all).then(()=>{
+    alert("Copied all explanations!");
+  }).catch(()=>{
+    const ta = document.createElement('textarea');
+    ta.value = window.__tmhyt_all;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    alert("Copied all explanations!");
+  });
+}
+
+function exportJSON(){
+  if(!entries.length){ alert("Nothing to export yet."); return; }
+  if(!document.getElementById('consent').checked){
+    if(!confirm("You have not checked consent. Export anyway?")) return;
+  }
+  const blob = new Blob([JSON.stringify(entries, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = "tmhyt_dataset.json"; a.click();
+  URL.revokeObjectURL(url);
+}
+function copyDataset(){
+  if(!entries.length){ alert("Nothing to copy yet."); return; }
+  const txt = JSON.stringify(entries);
+  navigator.clipboard.writeText(txt).then(()=>alert("Dataset copied!")).catch(()=>{
+    const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    alert("Dataset copied!");
+  });
+}
+// ---- Shareable link with embedded dataset ----
+function base64url(str){ return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
+function unbase64url(b64){ const pad=(b64+"===").slice(0, b64.length+(4-b64.length%4)%4); const s=pad.replace(/-/g,"+").replace(/_/g,"/"); return decodeURIComponent(escape(atob(s))); }
+function copyShareLink(){
+  if(!entries.length){ alert("Add entries first."); return; }
+  const payload = base64url(JSON.stringify(entries));
+  const base = location.href.split("#")[0];
+  const link = `${base}#data=${payload}`;
+  navigator.clipboard.writeText(link).then(()=>alert("Link copied!")).catch(()=>{
+    const ta = document.createElement('textarea'); ta.value = link; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    alert("Link copied!");
+  });
+}
+function loadFromHash(){
+  const m = (location.hash||"").match(/data=([^&]+)/);
+  if(m){
+    try{
+      const json = unbase64url(m[1]);
+      const arr = JSON.parse(json);
+      if(Array.isArray(arr)){ entries = arr; renderList(); saveLocal(); }
+    }catch(e){ console.warn("Bad data in hash"); }
+  }
+}
+
+async function sendToServer(entries){
+  try{
+    const consent = document.getElementById('consent')?.checked;
+    if(!consent) return;
+    await fetch('/api/submit', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ entries, ts: Date.now() })
+    });
+  }catch(e){ /* silent */ }
+}
+
+function escapeHTML(s){ return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+// On load
+loadLocal(); loadFromHash();
+</script>
+</body>
+</html>
